@@ -5,7 +5,9 @@ import com.indoorvivants.detective.Platform.OS.*
 import com.indoorvivants.detective.Platform
 import bindgen.interface.Binding
 import bindgen.interface.LogLevel
+
 import java.nio.file.Paths
+import scala.collection.immutable.Seq
 lazy val Versions = new {
   val Scala = "3.6.2" // "3.3.4"
 }
@@ -63,12 +65,12 @@ lazy val mpi = project
       Seq(
 
         Binding(
-          (Compile / baseDirectory).value / "mpi-amalgam.h",
+          (Compile / baseDirectory).value / "mpi.h",
           "mpi"
         )
-//          .withCImports(
-//            List("openssl/sha.h", "openssl/evp.h")
-//          )
+          .withCImports(
+            List("mpif.h","mpifptr.h","mpio.h","mspms.h")
+          )
           .withClangFlags(
             List("-I" + vcpkgConfigurator.value.includes("mpi"))
           )
@@ -123,6 +125,78 @@ lazy val openssl = project
   )
   .settings(bindgenSettings)
   .settings(configurePlatform())
+
+
+val detectedJavaHome = settingKey[File]("")
+ThisBuild / detectedJavaHome := {
+  val fromEnv = sys.env.get("JAVA_HOME").map(new File(_))
+  val log = sLog.value
+  lazy val fromDiscovery = {
+    val disc = (ThisBuild / discoveredJavaHomes).value
+    disc
+      .flatMap { case (v, loc) =>
+        scala.util.Try(v.toInt).toOption.map(_ -> loc)
+      }
+      .toSeq
+      .sortBy(_._1)
+      .reverse
+      .headOption
+      .map(_._2)
+      .map { loc =>
+        log.warn(
+          s"Selecting $loc by choosing the highest available version from discoveredJavaHomes (no othe options worked)"
+        )
+        loc
+      }
+  }
+
+  (ThisBuild / javaHome).value
+    .orElse(fromEnv)
+    .orElse(fromDiscovery)
+    .getOrElse(
+      sys.error("No Java home detected!")
+    )
+}
+
+//lazy val jni = project
+//  .in(file("example-jni"))
+//  .enablePlugins(ScalaNativePlugin, BindgenPlugin)
+//  .settings(
+//    scalaVersion := Versions.Scala,
+//    bindgenBindings += {
+//      import Platform.OS.*
+//      val jni_md = Platform.target.os match {
+//        case Linux   => "linux"
+//        case MacOS   => "darwin"
+//        case Windows => "windows"
+//      }
+//      Binding(
+//        detectedJavaHome.value / "include/jni.h",
+//        "jni"
+//      ).withNoConstructor(Set("JNINativeInterface_"))
+//        .addClangFlag(
+//          "-I" + (detectedJavaHome.value / s"include/$jni_md").toString
+//        )
+//    },
+//    nativeConfig := {
+//      val conf = nativeConfig.value
+//      conf.withLinkingOptions(
+//        _ ++ Seq(
+//          "-L" + (detectedJavaHome.value / "lib").toString,
+//          "-ljli",
+//          "-L" + (detectedJavaHome.value / "lib/server").toString,
+//          "-ljvm",
+//          // Note that adding rpath like this makes the binary non portable,
+//          // but I don't know how else to fix the @rpath problem this creates
+//          "-Wl,-rpath",
+//          (detectedJavaHome.value / "lib").toString,
+//          "-Wl,-rpath",
+//          (detectedJavaHome.value / "lib/server").toString
+//        )
+//      )
+//    }
+//  )
+//  .settings(bindgenSettings)
 
 //vcpkg install openssl:x64-windows
 //vcpkg install mpi:x64-windows
